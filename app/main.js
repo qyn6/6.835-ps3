@@ -23,41 +23,50 @@ var isGrabbing = false;
 Leap.loop({ hand: function(hand) {
   // Clear any highlighting at the beginning of the loop
   unhighlightTiles();
-
+  console.log(hand.grabStrength, hand.pinchStrength);
   // TODO: 4.1, Moving the cursor with Leap data
   // Use the hand data to control the cursor's screen position
-  var cursorPosition = [0, 0];
+  var cursorPosition = [hand.screenPosition()[0]-400, hand.screenPosition()[1]+200];
   cursor.setScreenPosition(cursorPosition);
 
   // TODO: 4.1
   // Get the tile that the player is currently selecting, and highlight it
-  //selectedTile = ?
+  selectedTile = getIntersectingTile(cursorPosition);
+  if (selectedTile !== false){
+    highlightTile(selectedTile, Colors.GREEN);
+  } 
 
   // SETUP mode
   if (gameState.get('state') == 'setup') {
     background.setContent("<h1>battleship</h1><h3 style='color: #7CD3A2;'>deploy ships</h3>");
     // TODO: 4.2, Deploying ships
     //  Enable the player to grab, move, rotate, and drop ships to deploy them
-
+    var shipAndOffset = getIntersectingShipAndOffset(cursorPosition);
     // First, determine if grabbing pose or not
-    isGrabbing = false;
 
+    isGrabbing = shipAndOffset && (hand.grabStrength > 0.9 || hand.pinchStrength > .9);
+ 
     // Grabbing, but no selected ship yet. Look for one.
     // TODO: Update grabbedShip/grabbedOffset if the user is hovering over a ship
     if (!grabbedShip && isGrabbing) {
+      grabbedShip = shipAndOffset['ship'];
+      grabbedOffset = shipAndOffset['offset'];
     }
-
     // Has selected a ship and is still holding it
     // TODO: Move the ship
     else if (grabbedShip && isGrabbing) {
-      grabbedShip.setScreenPosition([0,0]);
-      grabbedShip.setScreenRotation(0);
+      grabbedShip.setScreenPosition([cursorPosition[0] - grabbedOffset[0], cursorPosition[1] - grabbedOffset[1]]);
+      grabbedShip.setScreenRotation(-hand.roll());
     }
 
     // Finished moving a ship. Release it, and try placing it.
     // TODO: Try placing the ship on the board and release the ship
     else if (grabbedShip && !isGrabbing) {
+      placeShip(grabbedShip);
+      grabbedShip = false;
     }
+
+    console.log('grabbedship' + grabbedShip);
   }
 
   // PLAYING or END GAME so draw the board and ships (if player's board)
@@ -114,6 +123,7 @@ var processSpeech = function(transcript) {
   // Helper function to detect if any commands appear in a string
   var userSaid = function(str, commands) {
     for (var i = 0; i < commands.length; i++) {
+      str = str.toLowerCase();
       if (str.indexOf(commands[i]) > -1)
         return true;
     }
@@ -124,7 +134,7 @@ var processSpeech = function(transcript) {
   if (gameState.get('state') == 'setup') {
     // TODO: 4.3, Starting the game with speech
     // Detect the 'start' command, and start the game if it was said
-    if (false) {
+    if (userSaid(transcript, ['start'])) {
       gameState.startGame();
       processed = true;
     }
@@ -134,7 +144,7 @@ var processSpeech = function(transcript) {
     if (gameState.isPlayerTurn()) {
       // TODO: 4.4, Player's turn
       // Detect the 'fire' command, and register the shot if it was said
-      if (false) {
+      if (userSaid(transcript, ['fire'])) {
         registerPlayerShot();
 
         processed = true;
@@ -145,12 +155,27 @@ var processSpeech = function(transcript) {
       // TODO: 4.5, CPU's turn
       // Detect the player's response to the CPU's shot: hit, miss, you sunk my ..., game over
       // and register the CPU's shot if it was said
-      if (false) {
-        var response = "playerResponse";
+      if (userSaid(transcript, ['hit'])) {
+        var response = 'hit';
         registerCpuShot(response);
 
         processed = true;
-      }
+      } else if (userSaid(transcript, ['miss'])) {
+        var response = 'miss';
+        registerCpuShot(response);
+
+        processed = true;
+      } else if (userSaid(transcript, ['sunk'])) {
+        var response = 'sunk';
+        registerCpuShot(response);
+
+        processed = true;
+      } else if (userSaid(transcript, ['game over'])) {
+        var response = 'game over';
+        registerCpuShot(response);
+
+        processed = true;
+      } 
     }
   }
 
@@ -162,6 +187,7 @@ var processSpeech = function(transcript) {
 var registerPlayerShot = function() {
   // TODO: CPU should respond if the shot was off-board
   if (!selectedTile) {
+    generateSpeech('you suck');
   }
 
   // If aiming at a tile, register the player's shot
@@ -176,20 +202,27 @@ var registerPlayerShot = function() {
     // Game over
     if (result.isGameOver) {
       gameState.endGame("player");
+      generateSpeech('game over');
       return;
     }
     // Sunk ship
     else if (result.sunkShip) {
       var shipName = result.sunkShip.get('type');
+      generateSpeech('you sunk my ' + shipName);
     }
     // Hit or miss
     else {
       var isHit = result.shot.get('isHit');
+      if (isHit) {
+        generateSpeech('hit');
+      } else {
+        generateSpeech("you can't hit me!");
+      }
     }
 
     if (!result.isGameOver) {
       // TODO: Uncomment nextTurn to move onto the CPU's turn
-      // nextTurn();
+      nextTurn();
     }
   }
 };
@@ -205,6 +238,8 @@ var generateCpuShot = function() {
   var colName = COLNAMES[tile.col]; // e.g. "5"
 
   // TODO: Generate speech and visual cues for CPU shot
+  generateSpeech('fire ' + rowName + ' ' + colName);
+  blinkTile(tile);
 };
 
 // TODO: 4.5, CPU's turn
@@ -214,28 +249,48 @@ var registerCpuShot = function(playerResponse) {
   // Cancel any blinking
   unblinkTiles();
   var result = playerBoard.fireShot(cpuShot);
-
+  console.log(result);
   // NOTE: Here we are using the actual result of the shot, rather than the player's response
   // In 4.6, you may experiment with the CPU's response when the player is not being truthful!
 
   // TODO: Generate CPU feedback in three cases
+
   // Game over
   if (result.isGameOver) {
+    if (playerResponse !== 'game over') {
+      generateSpeech('you lying son of a sea biscuit');
+    }
     gameState.endGame("cpu");
+    generateSpeech('All I do is win win win');
     return;
   }
   // Sunk ship
   else if (result.sunkShip) {
+    if (playerResponse !== 'sunk') {
+      generateSpeech('you lying son of a sea biscuit');
+    }
     var shipName = result.sunkShip.get('type');
+    generateSpeech('HA HA sunked you')
   }
   // Hit or miss
   else {
     var isHit = result.shot.get('isHit');
+    if (isHit) {
+      if (playerResponse !== 'hit') {
+      generateSpeech('you lying son of a sea biscuit');
+      }
+      generateSpeech('AWESOME!');
+    } else {
+      if (playerResponse !== 'miss') {
+      generateSpeech('you lying son of a sea biscuit');
+      }
+      generateSpeech('poopy');
+    }
   }
 
   if (!result.isGameOver) {
     // TODO: Uncomment nextTurn to move onto the player's next turn
-    // nextTurn();
+    nextTurn();
   }
 };
 
