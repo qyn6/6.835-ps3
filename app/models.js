@@ -99,6 +99,7 @@ var Ship = Backbone.Model.extend({
     startPosition: [0, 0],
     screenRotation: 0,
     isVertical: false,
+    rotated: 0, // 0 = false, 1 = hor to vert, -1 = vert to hor
     health: 0
   },
 
@@ -130,6 +131,17 @@ var Ship = Backbone.Model.extend({
     var diff2 = Math.abs( rotation + Math.PI/2 );
     var isVertical = (diff1 < Math.PI/4 || diff2 < Math.PI/4);
     this.set('screenRotation', isVertical ? Math.PI/2 : 0);
+    var wasVerticle = this.get('isVertical');
+    var rotated = 0;
+    console.log('was vertical ', wasVerticle, ' is vertical ', isVertical);
+    if (isVertical && !wasVerticle){
+      // hor to vert
+      rotated = 1;
+    } else if (!isVertical && wasVerticle){
+      // vert to hor
+      rotated = -1;
+    }
+    this.set('rotated', rotated);
     this.set('isVertical', isVertical);
   },
 
@@ -147,11 +159,19 @@ var Ship = Backbone.Model.extend({
 
   getScreenOrigin: function() {
     var origin = this.get('screenPosition').slice(0);
-    if (this.get('isVertical')) {
-      // Get vertical origin
-      origin[0] += this.get('length') * TILESIZE/2;
-      origin[1] -= this.get('length') * TILESIZE/2;
-    }
+    var isVertical = this.get('isVertical');
+    var rotated = this.get('rotated');
+    var offset = this.get('length') - 1;
+    console.log(rotated);
+    if (isVertical && rotated == 1) {
+      //Get vertical origin
+      origin[0] += offset * TILESIZE/2;
+      origin[1] -= offset * TILESIZE/2;
+    } else if (!isVertical && (rotated == -1)){
+      //Get horizontal origin
+      origin[0] -= offset * TILESIZE/2;
+      origin[1] += offset * TILESIZE/2;
+  }
     return origin;
   },
 

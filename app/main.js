@@ -18,6 +18,12 @@ var grabbedOffset = [0, 0];
 // isGrabbing: Is the player's hand currently in a grabbing pose
 var isGrabbing = false;
 
+// hand rotation at start of grab
+var prevHandRotation = 0;
+
+// number of consecutive lies in a game
+var consecutiveLieCount = 0;
+
 // MAIN GAME LOOP
 // Called every time the Leap provides a new frame of data
 Leap.loop({ hand: function(hand) {
@@ -51,12 +57,14 @@ Leap.loop({ hand: function(hand) {
     if (!grabbedShip && isGrabbing) {
       grabbedShip = shipAndOffset['ship'];
       grabbedOffset = shipAndOffset['offset'];
+      prevHandRotation = -hand.roll();
     }
     // Has selected a ship and is still holding it
     // TODO: Move the ship
     else if (grabbedShip && isGrabbing) {
       grabbedShip.setScreenPosition([cursorPosition[0] - grabbedOffset[0], cursorPosition[1] - grabbedOffset[1]]);
-      grabbedShip.setScreenRotation(-hand.roll());
+      grabbedShip.setScreenRotation(grabbedShip.get('screenRotation') - hand.roll() - prevHandRotation);
+      prevHandRotation = -hand.roll();
     }
 
     // Finished moving a ship. Release it, and try placing it.
@@ -202,7 +210,7 @@ var registerPlayerShot = function() {
     // Game over
     if (result.isGameOver) {
       gameState.endGame("player");
-      generateSpeech('game over');
+      generateSpeech('Game over. You are the best!');
       return;
     }
     // Sunk ship
@@ -255,42 +263,78 @@ var registerCpuShot = function(playerResponse) {
 
   // TODO: Generate CPU feedback in three cases
 
+  var liar = false;
+  var sentence = "";
+
   // Game over
   if (result.isGameOver) {
+  	consecutiveLieCount = 0;
     if (playerResponse !== 'game over') {
-      generateSpeech('you lying son of a sea biscuit');
+      generateSpeech('What a sore loser');
+    } else {
+      generateSpeech('All I do is win win win');
     }
     gameState.endGame("cpu");
-    generateSpeech('All I do is win win win');
     return;
   }
   // Sunk ship
   else if (result.sunkShip) {
     if (playerResponse !== 'sunk') {
-      generateSpeech('you lying son of a sea biscuit');
+      sentence = 'you lying son of a sea biscuit.';
+      liar = true;
+    } else {
+    	sentence = 'HA HA sank your ship';
     }
-    var shipName = result.sunkShip.get('type');
-    generateSpeech('HA HA sunked you')
+    //var shipName = result.sunkShip.get('type');
   }
   // Hit or miss
   else {
     var isHit = result.shot.get('isHit');
     if (isHit) {
       if (playerResponse !== 'hit') {
-      generateSpeech('you lying son of a sea biscuit');
+      	sentence = 'Please, I know I hit you.';
+      	liar = true;
+      } else {
+      	sentence = 'AWESOME!';
       }
-      generateSpeech('AWESOME!');
     } else {
       if (playerResponse !== 'miss') {
-      generateSpeech('you lying son of a sea biscuit');
-      }
-      generateSpeech('poopy');
+      	sentence = 'Thanks, but I don\'t need your pity.';
+      	liar = true;
+      } else {
+      	sentence = 'Beaver dam';
+  	  }
     }
   }
 
-  if (!result.isGameOver) {
-    // TODO: Uncomment nextTurn to move onto the player's next turn
-    nextTurn();
+  var callbackFunc = nextTurn;
+
+  if (liar) {
+  	consecutiveLieCount++;
+  	if (consecutiveLieCount == 2) {
+  		sentence += ' I\'m warning you, lying has consequences';
+  	} else if (consecutiveLieCount == 3) {
+  		sentence += ' I told you so';
+  		// remove board
+  		callbackFunc = disappearBoard;
+  	}
+  } else {
+  	consecutiveLieCount = 0;
   }
+  
+  // if (!result.isGameOver) {
+  //   // TODO: Uncomment nextTurn to move onto the player's next turn
+  // }
+  generateSpeech(sentence, callbackFunc);
+};
+
+var disappearBoard = function() {
+	tiles.forEach(function(tile) {
+  		tile.render = function() { return null; };
+  	});
+  	playerBoard.get('ships').forEach(function(ship) {
+  		ship.get('view').render = function() { return null; };
+  	});
+  	nextTurn();
 };
 
