@@ -18,10 +18,10 @@ var grabbedOffset = [0, 0];
 // isGrabbing: Is the player's hand currently in a grabbing pose
 var isGrabbing = false;
 
-// hand rotation at start of grab
+// prevHandRotation: Hand rotation at start of grab
 var prevHandRotation = 0;
 
-// number of consecutive lies in a game
+// consecutiveLieCount: Number of consecutive lies in a game
 var consecutiveLieCount = 0;
 
 // MAIN GAME LOOP
@@ -316,7 +316,7 @@ var registerCpuShot = function(playerResponse) {
   	} else if (consecutiveLieCount == 3) {
   		sentence += ' I told you so';
   		// remove board
-  		callbackFunc = disappearBoard;
+  		callbackFunc = disappearBoardAndNextTurn;
   	}
   } else {
   	consecutiveLieCount = 0;
@@ -328,7 +328,7 @@ var registerCpuShot = function(playerResponse) {
   generateSpeech(sentence, callbackFunc);
 };
 
-var disappearBoard = function() {
+var disappearBoardAndNextTurn = function() {
 	tiles.forEach(function(tile) {
   		tile.render = function() { return null; };
   	});
